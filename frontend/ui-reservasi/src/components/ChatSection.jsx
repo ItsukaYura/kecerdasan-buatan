@@ -1,17 +1,55 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+
+const STORAGE_KEY_MESSAGES = 'sabrelab_chat_messages';
+const STORAGE_KEY_SESSION = 'sabrelab_chat_session_id';
+
+const PESAN_AWAL = {
+  role: 'assistant',
+  type: 'text',
+  content: 'Halo! Saya asisten reservasi laboratorium. Saya dapat membantu kamu memesan ruang lab, cek ketersediaan, atau batalkan reservasi.',
+  time: ''
+};
 
 export default function ChatSection() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const sessionId = useRef(null);
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      type: 'text',
-      content: 'Halo! Saya asisten reservasi laboratorium. Saya dapat membantu kamu memesan ruang lab, cek ketersediaan, atau batalkan reservasi.',
-      time: ''
+
+  // --- PERSISTENSI RIWAYAT CHAT ---
+  // Ambil riwayat pesan & session_id dari sessionStorage (kalau ada) supaya
+  // saat pindah tab (mis. ke Lab Komputer 1) lalu balik lagi ke Chat,
+  // riwayat chat tidak hilang / ke-reset ke pesan awal.
+  const sessionId = useRef(
+    sessionStorage.getItem(STORAGE_KEY_SESSION) || null
+  );
+
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY_MESSAGES);
+      return saved ? JSON.parse(saved) : [PESAN_AWAL];
+    } catch {
+      return [PESAN_AWAL];
     }
-  ]);
+  });
+
+  // Referensi untuk auto-scroll
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
+
+  // Simpan riwayat pesan ke sessionStorage setiap kali berubah
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY_MESSAGES, JSON.stringify(messages));
+    } catch (err) {
+      console.error("Gagal menyimpan riwayat chat:", err);
+    }
+  }, [messages]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -19,33 +57,50 @@ export default function ChatSection() {
 
     const userMessage = input;
     const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
+
     setMessages((prev) => [...prev, { role: 'user', type: 'text', content: userMessage, time: currentTime }]);
     setInput('');
     setIsLoading(true);
 
     try {
+      // --- BAGIAN YANG DISESUAIKAN ---
+      // GANTI URL INI dengan domain Railway kamu (tanpa tanda / di akhir)
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://kecerdasan-buatan-production.up.railway.app';
+
       const headers = { 'Content-Type': 'application/json' };
       if (import.meta.env.VITE_API_TOKEN) {
         headers['Authorization'] = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
       }
-      const response = await fetch('/api/chat', {
+
+      const response = await fetch(`${apiUrl}/api/chat`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ message: userMessage, session_id: sessionId.current })
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
 
       sessionId.current = data.session_id;
-      
-      setMessages((prev) => [...prev, { 
-        role: 'assistant', 
-        type: 'text', 
-        content: data.reply, 
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      sessionStorage.setItem(STORAGE_KEY_SESSION, data.session_id);
+
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        type: 'text',
+        content: data.reply,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }]);
     } catch (error) {
       console.error("Error connecting to backend:", error);
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        type: 'text',
+        content: "Maaf, terjadi kesalahan saat menghubungi server. Silakan coba lagi.",
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -88,16 +143,18 @@ export default function ChatSection() {
             </div>
           </div>
         )}
+        {/* Dummy div untuk scroll target */}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Kolom Input */}
       <div className="p-6 bg-white border-t border-gray-200 shrink-0">
         <form onSubmit={handleSendMessage} className="flex items-center bg-gray-50 border border-gray-200 rounded-full p-2 pl-4 shadow-sm focus-within:ring-2 ring-blue-200">
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ketik pesan..." 
+            placeholder="Ketik pesan..."
             className="flex-1 bg-transparent text-gray-800 px-4 py-2 outline-none text-[15px]"
           />
           <button type="submit" className="bg-blue-600 text-white w-11 h-11 rounded-full flex items-center justify-center">↑</button>

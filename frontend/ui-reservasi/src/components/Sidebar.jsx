@@ -7,11 +7,16 @@ export default function Sidebar({ activeTab, setActiveTab }) {
   ]);
 
   useEffect(() => {
+    // --- BAGIAN YANG DISESUAIKAN ---
+    // GANTI URL INI dengan domain Railway kamu (tanpa tanda / di akhir)
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://kecerdasan-buatan-production.up.railway.app';
+
     const headers = {};
     if (import.meta.env.VITE_API_TOKEN) {
       headers['Authorization'] = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
     }
-    fetch('/api/labs', { headers })
+
+    fetch(`${apiUrl}/api/labs`, { headers })
       .then((res) => {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json();
@@ -25,6 +30,11 @@ export default function Sidebar({ activeTab, setActiveTab }) {
       })
       .catch((err) => {
         console.error('Gagal fetch labs:', err);
+        // Fallback jika backend tidak jalan
+        setLabs([
+          { id: 'Lab Komputer 1', icon: '⚙️', status: 'Error' },
+          { id: 'Lab Komputer 2', icon: '🌐', status: 'Error' }
+        ]);
       });
   }, []);
 
@@ -53,6 +63,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
           {labs.map((lab) => {
             const isPenuh = lab.status === 'Penuh';
             const dotColor = lab.status === 'Memuat...' ? 'bg-gray-300'
+              : lab.status === 'Error' ? 'bg-red-500'
               : isPenuh ? 'bg-yellow-400'
               : lab.status === 'Terbooking' ? 'bg-orange-400'
               : 'bg-green-500';
